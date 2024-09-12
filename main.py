@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import time
@@ -6,6 +7,7 @@ from datetime import datetime
 from typing import Any, AsyncIterable, Iterator, List, Optional
 
 import ollama
+import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai.types.chat import ChatCompletionChunk
@@ -22,15 +24,15 @@ def log(*args):
 
 app = FastAPI()
 
-system: str = """
-You are task oriented system.
-You receive input from a user, process the input from the given instructions, and then output the result.
-Your objective is to provide consistent and correct results.
-Call the provided tools as needed to complete the task.
-You do not need to explain the steps taken, only provide the result to the given instructions.
-You are referred to as a tool.
-You don't move to the next step until you have a result.
-"""
+# system: str = """
+# You are task oriented system.
+# You receive input from a user, process the input from the given instructions, and then output the result.
+# Your objective is to provide consistent and correct results.
+# Call the provided tools as needed to complete the task.
+# You do not need to explain the steps taken, only provide the result to the given instructions.
+# You are referred to as a tool.
+# You don't move to the next step until you have a result.
+# """
 
 
 @app.middleware("http")
@@ -77,16 +79,33 @@ async def chat_completions(request: Request):
     if messages:
         if messages[0]["role"] == "system":
             messages[0]["role"] = 'user'
-    messages.insert(0, {"role": "system", "content": system})
+    # messages.insert(0, {"role": "system", "content": system})
 
     messages = merge_consecutive_dicts_with_same_value(messages, "role")
 
-    for message in messages:
+    for index, message in enumerate(messages):
         if message["role"] == "assistant" and message.get('tool_calls', None) is not None:
             for tool_call in message["tool_calls"]:
                 if tool_call["function"].get('arguments', None) is not None:
                     parsed = json.loads(tool_call["function"]["arguments"])
                     tool_call["function"]["arguments"] = marshal_top_level(parsed)
+
+        text_content: str | None = None
+        image_content = []
+        if type(message.get('content', None)) is list:
+            for content in message['content']:
+                if content['type'] == 'text':
+                    text_content = content['text']
+                if content['type'] == 'image_url':
+                    if content['image_url']['url'].startswith("data:"):
+                        image_content.append(content['image_url']['url'])
+                    else:
+                        image = requests.get(content['image_url']['url'])
+                        image.raise_for_status()
+                        b64_image = base64.b64encode(image.content).decode('utf-8')
+                        image_content.append(b64_image)
+            messages[index]['content'] = text_content
+            messages[index]['images'] = image_content
 
     try:
         resp: Mapping[str, Any] | Iterator[Mapping[str, Any]] = ollama.chat(
@@ -101,7 +120,6 @@ async def chat_completions(request: Request):
         )
     except Exception as e:
         status_code = e.__dict__.pop("status_code", 500)
-        print(status_code)
         return JSONResponse(content={"error": str(e)}, status_code=status_code)
 
     async def convert_stream(stream: Mapping[str, Any] | Iterator[Mapping[str, Any]]) -> AsyncIterable[str]:
