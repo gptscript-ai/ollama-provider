@@ -1,0 +1,4 @@
+ollama
+fastapi
+uvicorn[standard]
+openai
