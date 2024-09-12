@@ -71,7 +71,7 @@ async def chat_completions(request: Request):
     messages = merge_consecutive_dicts_with_same_value(messages, "role")
 
     for message in messages:
-        if message["role"] == "assistant" and message["tool_calls"]:
+        if message["role"] == "assistant" and message.get('tool_calls', None) is not None:
             for tool_call in message["tool_calls"]:
                 if tool_call["function"].get('arguments', None) is not None:
                     parsed = json.loads(tool_call["function"]["arguments"])
