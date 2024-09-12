@@ -1,6 +1,8 @@
 import json
 import os
+import time
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, AsyncIterable, Iterator, List, Optional
 
 import ollama
@@ -48,10 +50,19 @@ async def list_models() -> JSONResponse:
     data: list[dict] = []
     models = ollama.list()
     for model in models['models']:
+        # truncate nanoseconds to microseconds
+        timestamp = model['modified_at']
+        date_part, nanosecond_part = timestamp.split('.')
+        nanosecond_part, timezone_part = nanosecond_part.split('-')
+        microsecond_part = nanosecond_part[:6]
+        truncated_timestamp = f"{date_part}.{microsecond_part}-{timezone_part}"
+        dt = datetime.strptime(truncated_timestamp, "%Y-%m-%dT%H:%M:%S.%f%z")
+        unix_timestamp = time.mktime(dt.timetuple())
+
         data.append({
             "id": model['name'],
             "object": "model",
-            "created": model['modified_at'],
+            "created": int(unix_timestamp),
             "owned_by": "local",
         })
     return JSONResponse(content={"object": "list", "data": data})
