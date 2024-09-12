@@ -46,12 +46,12 @@ async def get_root():
 @app.get("/v1/models")
 async def list_models() -> JSONResponse:
     data: list[dict] = []
-    models = ollama.ps()  # only show models that are running
+    models = ollama.list()
     for model in models['models']:
         data.append({
             "id": model['name'],
             "object": "model",
-            "created": 0,
+            "created": model['modified_at'],
             "owned_by": "local",
         })
     return JSONResponse(content={"object": "list", "data": data})
